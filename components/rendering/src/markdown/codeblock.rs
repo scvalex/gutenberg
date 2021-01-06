@@ -4,7 +4,9 @@ use std::cmp::min;
 use std::collections::HashSet;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Color, Style, Theme};
-use syntect::html::{styled_line_to_highlighted_html, IncludeBackground};
+use syntect::html::{
+    start_highlighted_html_snippet, styled_line_to_highlighted_html, IncludeBackground,
+};
 use syntect::parsing::SyntaxSet;
 
 use super::fence::{FenceSettings, Range};
@@ -15,6 +17,8 @@ pub struct CodeBlock<'config> {
     background: IncludeBackground,
     theme: &'static Theme,
 
+    /// Line numbering is enabled.
+    line_numbers: bool,
     /// List of ranges of lines to highlight.
     highlight_lines: Vec<Range>,
     /// The number of lines in the code block being processed.
@@ -35,6 +39,7 @@ impl<'config> CodeBlock<'config> {
             background,
             theme,
 
+            line_numbers: fence_info.line_numbers,
             highlight_lines: fence_info.highlight_lines,
             num_lines: 0,
         }
@@ -61,7 +66,31 @@ impl<'config> CodeBlock<'config> {
         let hl_lines = self.get_highlighted_lines();
         color_highlighted_lines(&mut highlighted, &hl_lines, hl_background);
 
-        styled_line_to_highlighted_html(&highlighted, self.background)
+        let code_lines = styled_line_to_highlighted_html(&highlighted, self.background);
+
+        if self.line_numbers {
+            // This generates the following:
+            //
+            // ```
+            // <tr>
+            //   <td><pre>LINE_NUMBERS</pre></td>
+            //   <td><pre><code>CODE_LINES</code></pre></td>
+            // </tr>
+            // ```
+            let snippet = start_highlighted_html_snippet(self.theme);
+            let mut buf: String = "<tr><td>".into();
+            buf.push_str(&snippet.0);
+            let line_numbers: String = (1..self.num_lines).map(|ln| format!("{}\n", ln)).collect();
+            buf.push_str(&line_numbers);
+            buf.push_str("</pre></td><td>");
+            buf.push_str(&snippet.0);
+            buf.push_str("<code>");
+            buf.push_str(&code_lines);
+            buf.push_str("</code></pre></td>");
+            buf
+        } else {
+            code_lines
+        }
     }
 
     fn find_line_boundaries(&mut self, styled: &[(Style, &str)]) -> Vec<StyledIdx> {
@@ -86,6 +115,25 @@ impl<'config> CodeBlock<'config> {
             }
         }
         lines
+    }
+
+    pub fn start_tag(&self) -> String {
+        if self.line_numbers {
+            "<table class=\"codeWithLineNumbers\"><tbody>".into()
+        } else {
+            let snippet = start_highlighted_html_snippet(self.theme);
+            let mut html = snippet.0;
+            html.push_str("<code>");
+            html
+        }
+    }
+
+    pub fn end_tag(&self) -> &'static str {
+        if self.line_numbers {
+            "</tbody></table>"
+        } else {
+            "</code></pre>"
+        }
     }
 }
 

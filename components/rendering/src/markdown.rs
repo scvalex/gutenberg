@@ -225,18 +225,27 @@ pub fn markdown_to_html(content: &str, context: &RenderContext) -> Result<Render
                                 ));
                             }
                         };
-                        let snippet = start_highlighted_html_snippet(theme);
-                        let mut html = snippet.0;
-                        html.push_str("<code>");
-                        Event::Html(html.into())
+                        match highlighter {
+                            None => {
+                                let snippet = start_highlighted_html_snippet(theme);
+                                let mut html = snippet.0;
+                                html.push_str("<code>");
+                                Event::Html(html.into())
+                            }
+                            Some(ref codeblock) => Event::Html(codeblock.start_tag().into()),
+                        }
                     }
                     Event::End(Tag::CodeBlock(_)) => {
                         if !context.config.highlight_code {
                             return Event::Html("</code></pre>\n".into());
                         }
                         // reset highlight and close the code block
-                        highlighter = None;
-                        Event::Html("</code></pre>".into())
+                        let mut hl = None;
+                        std::mem::swap(&mut hl, &mut highlighter);
+                        match hl {
+                            None => Event::Html("</code></pre>".into()),
+                            Some(ref codeblock) => Event::Html(codeblock.end_tag().into()),
+                        }
                     }
                     Event::Start(Tag::Image(link_type, src, title)) => {
                         if is_colocated_asset_link(&src) {
